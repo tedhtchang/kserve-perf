@@ -1,0 +1,36 @@
+# From ubuntu:20.04
+# RUN apt clean
+# RUN apt update
+# RUN DEBIAN_FRONTEND=noninteractive apt install -y python3-pip git wget
+# WORKDIR /perf
+# COPY k6_test k6_test
+# COPY perf_test perf_test
+# RUN pip install -r perf_test/requirements.txt
+# RUN wget https://github.com/grafana/xk6/releases/download/v0.5.0/xk6_0.5.0_linux_amd64.tar.gz
+# RUN tar xzf xk6_0.5.0_linux_amd64.tar.gz
+# RUN wget https://go.dev/dl/go1.17.6.linux-amd64.tar.gz
+# RUN tar xzvf go1.17.6.linux-amd64.tar.gz
+# RUN mv go /lib/go-1.17.6
+# RUN ln -sf /lib/go-1.17.6/bin/go /usr/bin/go
+# RUN ./xk6 build --with github.com/grafana/xk6-output-prometheus-remote@latest
+# RUN mv ./k6 k6_test/k6
+# ENTRYPOINT perf_test/runHowitzer.sh
+
+#Need custom k6
+From golang:1.17 as build_k6
+WORKDIR /perf
+RUN wget https://github.com/grafana/xk6/releases/download/v0.5.0/xk6_0.5.0_linux_amd64.tar.gz \
+    && tar -xf xk6_0.5.0_linux_amd64.tar.gz
+RUN ./xk6 build --with github.com/grafana/xk6-output-prometheus-remote@latest
+RUN wget https://github.com/grafana/k6/releases/download/v0.36.0/k6-v0.36.0-linux-amd64.tar.gz \
+    && tar -xf ./k6-v0.36.0-linux-amd64.tar.gz
+
+From python:slim
+COPY --from=build_k6 /usr/local/go/bin/go /usr/local/bin/go
+COPY perf_test perf_test
+RUN pip install -r perf_test/requirements.txt
+COPY --from=build_k6 /perf/k6 /k6_test/k6
+COPY k6_test/kfs_inference_v2.proto /k6_test/kfs_inference_v2.proto
+COPY k6_test/payloads /k6_test/payloads
+COPY --from=build_k6 /perf/k6-v0.36.0-linux-amd64/k6 /usr/local/bin/k6
+ENTRYPOINT perf_test/runHowitzer.sh
